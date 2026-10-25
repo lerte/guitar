@@ -1,0 +1,186 @@
+﻿@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chord: var(--hand-chord);
+  --color-strum: var(--hand-strum);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --animate-pulse-ring: pulse-ring 1.6s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+  --animate-rise: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-shimmer: shimmer 1.8s linear infinite;
+  --animate-pluck: pluck-flash 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) 1 both;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes pluck-flash {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+:root {
+  --background: oklch(0.145 0.015 265);
+  --foreground: oklch(0.97 0.004 260);
+  --card: oklch(0.2 0.018 265);
+  --card-foreground: oklch(0.97 0.004 260);
+  --popover: oklch(0.18 0.018 265);
+  --popover-foreground: oklch(0.97 0.004 260);
+  --primary: oklch(0.79 0.135 192);
+  --primary-foreground: oklch(0.16 0.02 265);
+  --secondary: oklch(0.28 0.02 265);
+  --secondary-foreground: oklch(0.97 0.004 260);
+  --muted: oklch(0.25 0.016 265);
+  --muted-foreground: oklch(0.73 0.014 260);
+  --accent: oklch(0.3 0.03 265);
+  --accent-foreground: oklch(0.97 0.004 260);
+  --destructive: oklch(0.62 0.19 25);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.79 0.135 192 / 55%);
+
+  --hand-chord: oklch(0.83 0.13 196);
+  --hand-strum: oklch(0.85 0.15 80);
+
+  --radius: 0.875rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 35%, transparent);
+  }
+}
+
+@layer components {
+  .hud-panel {
+    background: color-mix(in oklab, #070a12 68%, transparent);
+    border: 1px solid color-mix(in oklab, white 12%, transparent);
+    backdrop-filter: blur(26px) saturate(135%);
+    -webkit-backdrop-filter: blur(26px) saturate(135%);
+    box-shadow:
+      0 20px 60px -26px rgb(0 0 0 / 0.9),
+      inset 0 1px 0 0 color-mix(in oklab, white 7%, transparent);
+  }
+
+  .hud-eyebrow {
+    font-size: 10px;
+    line-height: 1;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, white 48%, transparent);
+  }
+
+  .stage-vignette {
+    background:
+      radial-gradient(120% 90% at 50% 40%, transparent 38%, rgb(4 6 12 / 0.6) 100%),
+      linear-gradient(to bottom, rgb(4 6 12 / 0.68), transparent 20%, transparent 56%, rgb(4 6 12 / 0.9));
+  }
+
+  .chord-glyph {
+    font-family: var(--font-mono);
+    font-feature-settings: "ss01";
+    letter-spacing: -0.04em;
+    text-shadow: 0 0 42px color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+
+  .film-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    opacity: 0.055;
+    mix-blend-mode: overlay;
+  }
+}
+
+/* Thin, unobtrusive scrollbars inside panels */
+@layer utilities {
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, white 22%, transparent) transparent;
+  }
+}

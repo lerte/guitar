@@ -1,0 +1,7 @@
+﻿node_modules
+dist
+.tmp
+.chrome-profile
+.npm-cache
+*.local
+.DS_Store
