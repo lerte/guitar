@@ -1,7 +1,9 @@
 import { Activity, CameraOff, Guitar, Keyboard, Maximize2, Minimize2, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { GitHubMark } from "@/components/ui/github-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { GITHUB_LABEL, GITHUB_URL } from "@/lib/links";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -104,6 +106,26 @@ export function TopBar({
             <CameraOff className="size-4" />
           </IconButton>
         )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              asChild
+              variant="outline"
+              size="icon"
+              className="size-9 rounded-full border-white/12 bg-black/30 backdrop-blur-xl hover:bg-black/45"
+            >
+              <a
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                aria-label={`在 GitHub 查看源码：${GITHUB_LABEL}`}
+              >
+                <GitHubMark className="size-4" />
+              </a>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>GitHub 仓库</TooltipContent>
+        </Tooltip>
         <IconButton
           label={settingsOpen ? "收起设置" : "设置"}
           onClick={onToggleSettings}

@@ -1,6 +1,8 @@
 import { Camera, Keyboard, Sparkles, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { GitHubMark } from "@/components/ui/github-mark";
+import { GITHUB_LABEL, GITHUB_URL } from "@/lib/links";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -69,6 +71,17 @@ export function StartScreen({ error, busy, onStartCamera, onStartKeyboard, class
           <span>物理建模音色</span>
           <span className="text-white/15">·</span>
           <span>视频不上传</span>
+          <span className="text-white/15">·</span>
+          <a
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1.5 rounded-full px-1 text-white/45 underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            aria-label={`在 GitHub 查看源码：${GITHUB_LABEL}`}
+          >
+            <GitHubMark className="size-3.5" />
+            GitHub 源码
+          </a>
         </div>
       </div>
 
