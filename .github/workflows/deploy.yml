@@ -34,6 +34,7 @@ jobs:
         run: npm ci
 
       - name: Configure Pages
+        id: pages
         uses: actions/configure-pages@v5
         with:
           # Creates the Pages site on first run, so no manual setup is needed.
@@ -42,8 +43,9 @@ jobs:
       - name: Build site
         run: npm run build
         env:
-          # Derives `/guitar/` as the Vite base in vite.config.ts.
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          # "/guitar" without a custom domain, "" with one (served at the root).
+          # vite.config.ts turns this into the correct asset base.
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -36,10 +36,18 @@ npm run preview  # 预览构建产物
 
 推送到 [lerte/guitar](https://github.com/lerte/guitar) 后由 GitHub Actions 自动构建并发布，不需要手动上传 `dist/`：
 
-- 站点地址：https://lerte.github.io/guitar/
+- 站点地址：https://guitar.lerte.com/（Pages 自定义域名，站点挂在域名根路径）
 - 工作流：`.github/workflows/deploy.yml`（推送到 `main` 时触发，也可在 Actions 页手动 `Run workflow`）
-- `vite.config.ts` 根据 `GITHUB_REPOSITORY` 自动把 `base` 设为 `/guitar/`，本地开发仍是 `/`；运行时资源路径统一走 `import.meta.env.BASE_URL`，所以子路径部署不会 404
-- 首次运行会由 `actions/configure-pages` 自动开启 Pages；若仓库策略阻止，手动到 **Settings → Pages → Source** 选择 **GitHub Actions** 即可
+- `vite.config.ts` 的 `base` 取自 `actions/configure-pages` 的 `base_path`：自定义域名下为 `/`，未绑域名时自动变成 `/guitar/`；运行时资源路径统一走 `import.meta.env.BASE_URL`，两种部署都不会 404
+- 首次运行会由 `actions/configure-pages` 自动开启 Pages；若仓库策略阻止，手动到 **Settings → Pages → Source** 选择 **GitHub Actions**
+
+DNS 需要一条记录（Cloudflare）：
+
+| 类型 | 名称 | 内容 | 代理状态 |
+| --- | --- | --- | --- |
+| CNAME | `guitar` | `lerte.github.io` | DNS only（关闭橙云） |
+
+> 必须关闭代理，否则 GitHub 无法签发证书、也校验不了域名。证书签发后回到 **Settings → Pages** 勾选 **Enforce HTTPS**。
 
 > `public/mediapipe/` 与 `public/models/` 下的 WASM 与模型随仓库提交，构建时无需联网下载，Pages 站点完全自托管。
 

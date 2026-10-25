@@ -3,13 +3,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// GitHub Pages serves project sites under `/<repo>/`; the workflow exports
-// GITHUB_REPOSITORY, so the base follows the repository name automatically.
-// Locally (and for `vite preview`) the app stays at the site root.
-const repositoryName = process.env.GITHUB_REPOSITORY?.split("/")[1];
+// GitHub Pages serves a project site under `/<repo>/` — but when the Pages
+// site has a custom domain (here: guitar.lerte.com), it is served at the
+// domain root instead. The deploy workflow passes the base path reported by
+// actions/configure-pages, which accounts for both cases; empty means root.
+// Local dev, `vite preview` and plain `npm run build` stay at the root.
+const pagesBasePath = process.env.PAGES_BASE_PATH?.trim() ?? "";
+const base = pagesBasePath ? `${pagesBasePath.replace(/\/+$/, "")}/` : "/";
 
 export default defineConfig({
-  base: repositoryName ? `/${repositoryName}/` : "/",
+  base,
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
