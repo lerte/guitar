@@ -74,6 +74,8 @@ type Options = {
   showSkeleton: boolean;
   mode: PlayMode;
   feel: FeelTuning;
+  /** The seven chords of the current key + mode, in scale-degree order. */
+  chords: ChordId[];
   onChord?: (chord: ChordId | null, info: { fingers: number; pattern: string }) => void;
   onStrum?: (event: { direction: StrumDirection; velocity: number }) => void;
   onPluck?: (event: PluckEvent) => void;
@@ -150,6 +152,7 @@ export function useHandTracking(options: Options) {
     showSkeleton,
     mode: options.mode,
     feel: options.feel,
+    chords: options.chords,
   });
   optionsRef.current = {
     onChord,
@@ -159,6 +162,7 @@ export function useHandTracking(options: Options) {
     showSkeleton,
     mode: options.mode,
     feel: options.feel,
+    chords: options.chords,
   };
 
   const retry = useCallback(() => {
@@ -209,6 +213,7 @@ export function useHandTracking(options: Options) {
       const settings = optionsRef.current;
       controller.setMode(settings.mode);
       controller.setTuning(settings.feel);
+      controller.setChords(settings.chords);
 
       if (video.readyState >= 2 && video.videoWidth > 0 && video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;

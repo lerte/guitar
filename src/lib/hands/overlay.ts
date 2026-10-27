@@ -1,5 +1,5 @@
 import type { StrumDirection } from "@/lib/guitar/audio-engine";
-import { CHORDS, STRING_LABELS, type ChordId } from "@/lib/guitar/chords";
+import { getChord, STRING_LABELS, type ChordId } from "@/lib/guitar/chords";
 import { STRING_BAND, type PlayMode } from "./gesture-controller";
 import { FINGERTIPS, HAND_CONNECTIONS, type Landmark } from "./landmarks";
 
@@ -260,7 +260,7 @@ function drawStringRail(
     const bandTop = top + band * bandHeight;
     const centerY = bandTop + bandHeight / 2;
     const active = target === index;
-    const playable = !chord || (CHORDS[chord]?.frets[index] ?? -1) >= 0;
+    const playable = !chord || (getChord(chord)?.frets[index] ?? -1) >= 0;
     const label = `${6 - index} · ${STRING_LABELS[index]}${playable ? "" : " ×"}`;
 
     if (active) {

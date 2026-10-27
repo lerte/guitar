@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Hand } from "lucide-react";
 import { BootOverlay, LoadingPill, TrackingErrorPanel } from "@/components/boot-overlay";
 import { CameraStage } from "@/components/camera-stage";
@@ -7,6 +7,7 @@ import { ControlPanel } from "@/components/hud/control-panel";
 import { GestureGuide } from "@/components/hud/gesture-guide";
 import { HandReadouts } from "@/components/hud/hand-readouts";
 import { CapoControl } from "@/components/hud/capo-control";
+import { KeyControl } from "@/components/hud/key-control";
 import { PlayModeSwitch } from "@/components/hud/play-mode-switch";
 import { TopBar } from "@/components/hud/top-bar";
 import { StartScreen } from "@/components/start-screen";
@@ -14,10 +15,43 @@ import { useHandTracking } from "@/hooks/use-hand-tracking";
 import { ArpeggioPlayer } from "@/lib/guitar/arpeggio";
 import { GuitarEngine, type StrumDirection } from "@/lib/guitar/audio-engine";
 import type { PlayMode } from "@/lib/hands/gesture-controller";
-import { CAPO_RANGE, CHORD_ORDER, type ChordId } from "@/lib/guitar/chords";
+import {
+  CAPO_RANGE,
+  keyScale,
+  MODE_IDS,
+  type ChordId,
+  type ModeId,
+} from "@/lib/guitar/chords";
 import { DEFAULT_FEEL, loadFeel, saveFeel, type FeelTuning } from "@/lib/hands/feel";
 
 type Phase = "idle" | "starting" | "live" | "error";
+
+const KEY_STORAGE = "air-guitar:key";
+
+/** 调式 survives reloads: it is the one setting that changes the whole set. */
+function loadKey(): { root: number; mode: ModeId } {
+  try {
+    const raw = localStorage.getItem(KEY_STORAGE);
+    if (raw) {
+      const [root, mode] = raw.split(":");
+      const pc = Number.parseInt(root ?? "", 10);
+      if (!Number.isNaN(pc) && MODE_IDS.includes(mode as ModeId)) {
+        return { root: ((pc % 12) + 12) % 12, mode: mode as ModeId };
+      }
+    }
+  } catch {
+    /* storage can be blocked */
+  }
+  return { root: 0, mode: "ionian" };
+}
+
+function saveKey(root: number, mode: ModeId) {
+  try {
+    localStorage.setItem(KEY_STORAGE, `${root}:${mode}`);
+  } catch {
+    /* ignore */
+  }
+}
 
 function describeCameraError(cause: unknown) {
   if (cause instanceof DOMException) {
@@ -47,11 +81,16 @@ function KeyboardBackdrop() {
 }
 
 export default function App() {
+  const [key, setKey] = useState<{ root: number; mode: ModeId }>(() => loadKey());
+  const scale = useMemo(() => keyScale(key.root, key.mode), [key.root, key.mode]);
+  const chords = scale.chords;
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GuitarEngine | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const chordRef = useRef<ChordId>("C");
+  const chordRef = useRef<ChordId>(chords[0]);
+  const chordsRef = useRef<ChordId[]>(chords);
   const mutedRef = useRef(false);
   const volumeRef = useRef(0.85);
   const reverbRef = useRef(0.28);
@@ -61,10 +100,12 @@ export default function App() {
   const pickPulseIdRef = useRef(0);
   const capoRef = useRef(0);
 
+  chordsRef.current = chords;
+
   const [phase, setPhase] = useState<Phase>("idle");
   const [stage, setStage] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [chord, setChord] = useState<ChordId>("C");
+  const [chord, setChord] = useState<ChordId>(chords[0]);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.85);
   const [reverb, setReverb] = useState(0.28);
@@ -104,6 +145,28 @@ export default function App() {
   }, [feel]);
 
   useEffect(() => {
+    saveKey(key.root, key.mode);
+    engineRef.current?.setChordSet(chords);
+  }, [key.root, key.mode, chords]);
+
+  /**
+   * Changing key keeps the *degree*: the shape held by the left hand (or the
+   * chord chosen with 1–7) is transposed into the new key instead of being
+   * dropped. `chords` has no duplicate labels within a key, so the index of the
+   * old label is exactly the degree.
+   */
+  const previousChordsRef = useRef(chords);
+  useEffect(() => {
+    const previous = previousChordsRef.current;
+    previousChordsRef.current = chords;
+    if (previous === chords) return;
+    const degree = previous.indexOf(chordRef.current);
+    if (degree < 0) return;
+    chordRef.current = chords[degree];
+    setChord(chords[degree]);
+  }, [chords]);
+
+  useEffect(() => {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
@@ -137,6 +200,7 @@ export default function App() {
     engine.setReverb(reverbRef.current);
     engine.setMuted(mutedRef.current);
     engine.setCapo(capoRef.current);
+    engine.setChordSet(chordsRef.current);
     setAudioReady(true);
     return engine;
   }, []);
@@ -366,8 +430,8 @@ export default function App() {
           break;
         default: {
           const index = Number.parseInt(event.key, 10);
-          if (!Number.isNaN(index) && index >= 1 && index <= CHORD_ORDER.length) {
-            pickChord(CHORD_ORDER[index - 1], keyboardMode);
+          if (!Number.isNaN(index) && index >= 1 && index <= chords.length) {
+            pickChord(chords[index - 1], keyboardMode);
           }
         }
       }
@@ -375,7 +439,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keyboardMode, phase, pickChord, strumNow, toggleFullscreen, toggleMute]);
+  }, [chords, keyboardMode, phase, pickChord, strumNow, toggleFullscreen, toggleMute]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -384,8 +448,17 @@ export default function App() {
     const capoParam = Number.parseInt(params.get("capo") ?? "", 10);
     if (!Number.isNaN(capoParam)) setCapo(Math.max(0, Math.min(CAPO_RANGE, capoParam)));
     if (params.get("arp") === "1") setAutoArp(true);
+    const keyParam = Number.parseInt(params.get("key") ?? "", 10);
+    const scaleParam = params.get("scale");
+    if (!Number.isNaN(keyParam) || (scaleParam && MODE_IDS.includes(scaleParam as ModeId))) {
+      setKey((current) => ({
+        root: Number.isNaN(keyParam) ? current.root : ((keyParam % 12) + 12) % 12,
+        mode: scaleParam && MODE_IDS.includes(scaleParam as ModeId) ? (scaleParam as ModeId) : current.mode,
+      }));
+    }
     if (params.get("autostart") === "1") void startCamera();
-  }, [startCamera]);
+    if (params.get("keyboard") === "1") void startKeyboard();
+  }, [startCamera, startKeyboard]);
 
   const tracking = useHandTracking({
     videoRef,
@@ -395,6 +468,7 @@ export default function App() {
     showSkeleton,
     mode: playMode,
     feel,
+    chords,
     onChord: handleChord,
     onStrum: handleStrum,
     onPluck: handlePluck,
@@ -404,6 +478,9 @@ export default function App() {
   const live = phase === "live";
   const cameraVisible = live && !keyboardMode;
   const displayChord = muted ? null : chord;
+  const degree = displayChord
+    ? (scale.degrees.find((entry) => entry.chord === displayChord)?.roman ?? null)
+    : null;
 
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-[#05070c] text-foreground">
@@ -462,7 +539,7 @@ export default function App() {
                   {muted ? "切音" : chord}
                 </div>
                 <div className="mt-3 text-[11px] text-white/35">
-                  按 1–7 选择和弦 · 空格下扫 · ↑ 上扫 · M 切音
+                  按 1–7 选择音级 · 空格下扫 · ↑ 上扫 · M 切音
                 </div>
               </div>
             </div>
@@ -514,15 +591,23 @@ export default function App() {
           />
 
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between gap-4 p-4 sm:p-6">
-            {showGuide && !keyboardMode && (
+            {showGuide && (
               <GestureGuide
                 activeChord={displayChord}
+                chords={chords}
+                degrees={scale.degrees}
+                keyName={scale.label}
                 playMode={playMode}
                 className="hidden max-w-[26rem] lg:block"
               />
             )}
             <div className="ml-auto flex flex-col items-end gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <KeyControl
+                  tonicPc={key.root}
+                  modeId={key.mode}
+                  onChange={(root, mode) => setKey({ root, mode })}
+                />
                 <CapoControl value={capo} onChange={setCapo} />
                 <PlayModeSwitch value={playMode} onChange={setPlayMode} />
               </div>
@@ -538,6 +623,7 @@ export default function App() {
                 targetString={snapshot.targetString}
                 pluck={pickPulse}
                 capo={capo}
+                degree={degree}
                 mode={keyboardMode ? "keyboard" : "camera"}
               />
             </div>

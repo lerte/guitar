@@ -1,5 +1,5 @@
 import type { PlayMode } from "@/lib/hands/gesture-controller";
-import { STRING_LABELS, transposeChordLabel, type ChordId } from "@/lib/guitar/chords";
+import { getChord, STRING_LABELS, transposeChordLabel, type ChordId } from "@/lib/guitar/chords";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -36,6 +36,7 @@ export function HandReadouts({
 }: Props) {
   const leftActive = leftPresent || keyboardMode;
   const picking = playMode === "pick";
+  const def = chord ? getChord(chord) : null;
 
   const rightValue = !rightPresent
     ? "—"
@@ -81,9 +82,9 @@ export function HandReadouts({
             >
               {muted ? "—" : (chord ?? "—")}
             </span>
-            {!muted && chord && capo > 0 && (
+            {!muted && def && capo > 0 && (
               <span className="text-[10px] font-medium text-strum">
-                → {transposeChordLabel(chord, capo)}
+                → {transposeChordLabel(def, capo)}
               </span>
             )}
           </div>

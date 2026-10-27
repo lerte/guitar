@@ -15,7 +15,7 @@ type Props = {
 
 const STEPS = [
   { step: "01", title: "允许摄像头", detail: "浏览器会请求权限，画面只在本机处理。" },
-  { step: "02", title: "左手选和弦", detail: "食指到小指，手指数量对应 7 个开放和弦。" },
+  { step: "02", title: "左手选音级", detail: "食指到小指，手指数量对应 7 个音级，调式面板可换任意调与调式。" },
   { step: "03", title: "右手扫弦", detail: "握拳下扫、展开上扫，像拿拨片一样交替。" },
 ];
 
@@ -66,7 +66,7 @@ export function StartScreen({ error, busy, onStartCamera, onStartKeyboard, class
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-white/35">
-          <span>7 个和弦</span>
+          <span>12 个调 · 7 种调式</span>
           <span className="text-white/15">·</span>
           <span>物理建模音色</span>
           <span className="text-white/15">·</span>

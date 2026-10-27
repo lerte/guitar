@@ -1,10 +1,4 @@
-import {
-  CHORDS,
-  CHORD_ORDER,
-  TUNING_MIDI,
-  midiToFrequency,
-  type ChordId,
-} from "@/lib/guitar/chords";
+import { getChord, midiToFrequency, TUNING_MIDI, type ChordId } from "@/lib/guitar/chords";
 
 export type StrumDirection = "down" | "up";
 
@@ -48,6 +42,8 @@ export class GuitarEngine {
   private reverbAmount = 0.28;
   /** 变调夹: every sounding pitch is raised by this many semitones. */
   private capo = 0;
+  /** Chords of the current key + mode, pre-rendered so strums never hitch. */
+  private prewarmChords: ChordId[] = [];
 
   get isReady() {
     return this.ctx !== null;
@@ -344,7 +340,7 @@ export class GuitarEngine {
   strum(chord: ChordId | null, direction: StrumDirection, velocity = 0.8) {
     const ctx = this.ctx;
     if (!ctx || !chord || this.muted) return;
-    const def = CHORDS[chord];
+    const def = getChord(chord);
     if (!def) return;
 
     const strings = def.frets
@@ -383,7 +379,7 @@ export class GuitarEngine {
   pluck(chord: ChordId | null, stringIndex: number, velocity = 0.8, when?: number): number | null {
     const ctx = this.ctx;
     if (!ctx || !chord || this.muted) return null;
-    const fret = CHORDS[chord]?.frets[stringIndex];
+    const fret = getChord(chord)?.frets[stringIndex];
     if (fret === undefined || fret < 0) return null;
 
     const midi = TUNING_MIDI[stringIndex] + fret + this.capo;
@@ -457,6 +453,17 @@ export class GuitarEngine {
     this.reverbSend.gain.setTargetAtTime(this.reverbAmount * 0.5, ctx.currentTime, 0.05);
   }
 
+  /**
+   * Tell the engine which chords the next strum may use. Their notes are
+   * rendered in the background, so switching key never produces a cold render
+   * on the first downstroke.
+   */
+  setChordSet(chords: ChordId[]) {
+    if (this.prewarmChords === chords) return;
+    this.prewarmChords = chords;
+    if (this.ctx) this.schedulePrewarm();
+  }
+
   /** Keyboard / touch fallback: one-shot chord, no gestures involved. */
   playChord(chord: ChordId, velocity = 0.8) {
     this.strum(chord, "down", velocity);
@@ -467,12 +474,12 @@ export class GuitarEngine {
     let index = 0;
     const step = () => {
       if (this.disposed || !this.ctx) return;
-      const chord = CHORD_ORDER[index++];
+      const chord = this.prewarmChords[index++];
       if (!chord) {
         this.prewarmTimer = null;
         return;
       }
-      for (const midi of CHORDS[chord].midis) this.getPluck(midi + this.capo);
+      for (const midi of getChord(chord)?.midis ?? []) this.getPluck(midi + this.capo);
       this.prewarmTimer = window.setTimeout(step, 16);
     };
     this.prewarmTimer = window.setTimeout(step, 40);

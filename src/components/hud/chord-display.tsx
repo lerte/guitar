@@ -2,10 +2,11 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { PlayMode } from "@/lib/hands/gesture-controller";
 import {
-  CHORDS,
+  getChord,
   STRING_LABELS,
   transposeChordLabel,
   transposedNotes,
+  type Chord,
   type ChordId,
 } from "@/lib/guitar/chords";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,8 @@ type Props = {
   /** 变调夹 position in frets (0 = off). */
   capo?: number;
   mode?: "camera" | "keyboard";
+  /** Roman numeral of the current scale degree, e.g. "Ⅳ". */
+  degree?: string | null;
   className?: string;
 };
 
@@ -59,9 +62,10 @@ export function ChordDisplay({
   pluck = null,
   capo = 0,
   mode = "camera",
+  degree = null,
   className,
 }: Props) {
-  const def = chord ? CHORDS[chord] : null;
+  const def = chord ? getChord(chord) : null;
   const activeDirection = pulse?.direction;
   const picking = playMode === "pick";
 
@@ -87,7 +91,10 @@ export function ChordDisplay({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="hud-eyebrow">当前和弦</div>
+          <div className="hud-eyebrow flex items-center gap-1.5">
+            当前和弦
+            {degree && <span className="text-white/25">· {degree} 级</span>}
+          </div>
           <div className="mt-1 flex items-end gap-2.5">
             <div
               className={cn(
@@ -99,24 +106,24 @@ export function ChordDisplay({
             </div>
             <div className="mb-1.5 flex flex-col items-start gap-1">
               <Badge variant={muted ? "warning" : def ? "default" : "outline"}>
-                {muted ? "切音" : def ? def.quality : "待选择"}
+                {muted ? "切音" : def ? def.qualityLabel : "待选择"}
               </Badge>
               {def && capo > 0 && (
                 <Badge variant="warning">
-                  变调夹 {capo} → {transposeChordLabel(def.id, capo)}
+                  变调夹 {capo} → {transposeChordLabel(def, capo)}
                 </Badge>
               )}
               <span className="text-[10px] tracking-wide text-white/40">
                 {def
                   ? capo > 0
-                    ? `实际 ${transposedNotes(def.id, capo).join(" · ")}`
+                    ? `实际 ${transposedNotes(def, capo).join(" · ")}`
                     : def.notes.join(" · ")
                   : "举起左手"}
               </span>
             </div>
           </div>
         </div>
-        {def ? <ChordDiagram chord={def.id} className="mt-0.5 shrink-0" /> : null}
+        {def ? <ChordDiagram chord={def} className="mt-0.5 shrink-0" /> : null}
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
@@ -203,15 +210,16 @@ function PickBadge({
   );
 }
 
-function ChordDiagram({ chord, className }: { chord: ChordId; className?: string }) {
-  const def = CHORDS[chord];
-  const frets = 4;
+/** Chord grid. Shapes that live up the neck are drawn from their hand position. */
+function ChordDiagram({ chord, className }: { chord: Chord; className?: string }) {
+  const shown = 4;
   const left = 8;
   const right = 72;
   const top = 16;
   const bottom = 84;
   const gapX = (right - left) / 5;
-  const gapY = (bottom - top) / frets;
+  const gapY = (bottom - top) / shown;
+  const openPosition = chord.baseFret === 1;
 
   return (
     <svg
@@ -220,7 +228,20 @@ function ChordDiagram({ chord, className }: { chord: ChordId; className?: string
       fill="none"
       aria-hidden
     >
-      <rect x={left} y={top} width={right - left} height={2.4} rx={1.2} fill="rgba(255,255,255,0.6)" />
+      {/* Nut (open position) or the top line of a shifted window. */}
+      <rect
+        x={left}
+        y={top}
+        width={right - left}
+        height={openPosition ? 2.4 : 1}
+        rx={openPosition ? 1.2 : 0}
+        fill={openPosition ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.28)"}
+      />
+      {!openPosition && (
+        <text x={1} y={top + gapY * 0.75} fontSize={7} fill="rgba(255,255,255,0.45)">
+          {chord.baseFret}fr
+        </text>
+      )}
       {Array.from({ length: 6 }).map((_, index) => (
         <line
           key={`string-${index}`}
@@ -232,7 +253,7 @@ function ChordDiagram({ chord, className }: { chord: ChordId; className?: string
           strokeWidth={1}
         />
       ))}
-      {Array.from({ length: frets - 1 }).map((_, index) => (
+      {Array.from({ length: shown }).map((_, index) => (
         <line
           key={`fret-${index}`}
           x1={left}
@@ -243,7 +264,7 @@ function ChordDiagram({ chord, className }: { chord: ChordId; className?: string
           strokeWidth={1}
         />
       ))}
-      {def.frets.map((fret, index) => {
+      {chord.frets.map((fret, index) => {
         const x = left + index * gapX;
         if (fret < 0) {
           return (
@@ -258,7 +279,13 @@ function ChordDiagram({ chord, className }: { chord: ChordId; className?: string
           );
         }
         return (
-          <circle key={index} cx={x} cy={top + (fret - 0.5) * gapY} r={3.6} fill="currentColor" />
+          <circle
+            key={index}
+            cx={x}
+            cy={top + (fret - chord.baseFret + 0.5) * gapY}
+            r={3.6}
+            fill="currentColor"
+          />
         );
       })}
     </svg>

@@ -3,6 +3,7 @@
 用摄像头做一把不用碰的吉他：**左手比出手型选择和弦，右手握拳下扫 / 展开上扫，或切到分解指弹，声音由 Web Audio 物理建模实时合成**。摄像头画面全屏镜像显示，手部骨架、和弦标签、弦位轨道与扫弦反馈直接叠在画面上。
 
 - 手部识别：[MediaPipe Hand Landmarker]（模型与 WASM 全部本地托管，不上传任何画面）
+- 调式：**12 个主音 × 7 种教会调式**（大调、多利亚、弗里吉亚、利底亚、混合利底亚、小调、洛克里亚）；手型固定映射音级，换调式后整套和弦一起变
 - 演奏方式：**扫弦** 与 **分解和弦**（右手选弦 + 捏合拨弦 / 自动指型伴奏）
 - 变调夹：0–7 品整体移调，指型不变，实际和弦与音高一起变
 - 左右侧固定读数：左手和弦在左、右手手势在右，垂直居中，不跟随手部移动
@@ -63,18 +64,31 @@ DNS 需要一条记录（Cloudflare）：
 
 左手（选择和弦，手型保持约 0.1 秒才生效）：
 
-| 手型 | 和弦 | 说明 |
+| 手型 | 音级 | 说明 |
 | --- | --- | --- |
-| ☝️ 食指 | C | 1 指 |
-| ✌️ 食指 + 中指 | G | 2 指 |
-| 🤟 三指 | Am | 食指 + 中指 + 无名指 |
-| 🖖 四指 | F | 食指到小指 |
-| 🖐️ 五指张开 | Em | 全开 |
-| 👍 只竖拇指 | Dm | 拇指 |
-| 🤙 拇指 + 小指 | D | 摇滚手势 |
+| ☝️ 食指 | I | 1 指 |
+| ✌️ 食指 + 中指 | II | 2 指 |
+| 🤟 三指 | III | 食指 + 中指 + 无名指 |
+| 🖖 四指 | IV | 食指到小指 |
+| 🖐️ 五指张开 | V | 全开 |
+| 👍 只竖拇指 | VI | 拇指 |
+| 🤙 拇指 + 小指 | VII | 摇滚手势 |
 | ✊ 握拳 | 切音 | 闷音 / 停止发声 |
 
-无法精确匹配时按“伸出手指的数量”回退映射（0→切音、1→C、2→G、3→Am、4→F、5→Em），所以拇指识别不确定时也能弹。
+手型只决定**音级**，具体是哪个和弦由当前调式决定。比如 C 大调是 `C · Dm · Em · F · G · Am · Bdim`，A 小调是 `Am · Bdim · C · Dm · Em · F · G`，G 多利亚则是 `Gm · Am · B♭ · C · Dm · Edim · F`。左手保持同一个手型切换调式，会直接换成新调的同级和弦。
+
+无法精确匹配时按“伸出手指的数量”回退映射（0→切音、1→I、2→II … 5→V），所以拇指识别不确定时也能弹。
+
+## 调式与音级
+
+右下角的「调式」按钮可以自由组合：
+
+- **主音**：12 个半音（C、D♭、D … B），按钮上显示的是当前调式下最好读的拼写；
+- **调式**：大调 / 多利亚 / 弗里吉亚 / 利底亚 / 混合利底亚 / 小调 / 洛克里亚，每种调式自带一套七声音阶与级和弦性质（大三、小三、减三）；
+- 面板底部会列出当前调式的七个级和弦，方便先看再弹；
+- 选择会写入 `localStorage`（`air-guitar:key`），下次打开保持；换调式时左手的**音级不变**，和弦自动移调。
+
+变调夹是在这套系统之上再整体升 N 个半音，两者互不冲突：先选调式决定和弦，再用变调夹改变实际音高。
 
 ## 两种右手演奏方式
 
@@ -128,7 +142,7 @@ DNS 需要一条记录（Cloudflare）：
 
 | 按键 | 功能 |
 | --- | --- |
-| `1`–`7` | 选择 C / G / Am / F / Em / D / Dm |
+| `1`–`7` | 选择当前调式的 I–vii 级和弦 |
 | `空格` / `↓` | 下扫 |
 | `↑` | 上扫 |
 | `V` | 切换扫弦 / 分解 |
@@ -147,6 +161,7 @@ DNS 需要一条记录（Cloudflare）：
 - `?autostart=1` 自动开始（截图/录制演示用；音频仍需要一次点击解锁）
 - `?mode=pick` 直接进入分解模式
 - `?capo=3` 启动时夹 3 品（0–7）
+- `?key=9&scale=aeolian` 启动时使用 A 小调（`key` 为主音音高 0–11，0 = C；`scale` 取 `ionian` / `dorian` / `phrygian` / `lydian` / `mixolydian` / `aeolian` / `locrian`）
 - `?arp=1` 启动时开启自动分解
 - `?swap=1` 打开左右手互换（默认关闭）
 
@@ -162,7 +177,7 @@ src/
     gesture-controller.ts     时间去抖：和弦切换、抓取迟滞、扫弦方向、右手选弦与拨弦
     overlay.ts                Canvas 骨架、掌心环、标签、扫弦脉冲、6 条弦位轨道
   lib/guitar/
-    chords.ts                 标准调弦、7 个开放和弦、手势→和弦映射、弦位工具
+    chords.ts                 调式/音阶、和弦拼写、开放与移动和弦指型、手势→音级映射
     audio-engine.ts           Karplus-Strong 合成器、单弦拨奏、变调夹移调、琴身 EQ、混响
     arpeggio.ts               分解指型 + 前瞻调度的自动分解播放器
   components/hud/             顶栏、和弦卡、手型对照、演奏方式开关、设置面板
@@ -189,7 +204,9 @@ src/
 
 - 手感阈值（可实时调）：`src/lib/hands/feel.ts` 的 `DEFAULT_FEEL` 与 `FEEL_RANGES`
 - 固定阈值：`src/lib/hands/landmarks.ts`（直度、抓取/捏合归一化）、`src/lib/hands/gesture-controller.ts`（`STRING_BAND`、拨弦间隔、扫弦静默期）
-- 和弦与手型映射：`src/lib/guitar/chords.ts` 的 `SHAPES` 与 `PATTERN_TO_CHORD`
+- 调式与音阶：`src/lib/guitar/chords.ts` 的 `MODES`（调式、音程、级和弦性质）
+- 和弦指型：`src/lib/guitar/chords.ts` 的 `OPEN_SHAPES` 与 `MOVABLE_MAJOR` / `MOVABLE_MINOR` / `MOVABLE_DIM`
+- 手势与音级映射：`src/lib/guitar/chords.ts` 的 `PATTERN_TO_DEGREE` 与 `COUNT_TO_DEGREE`
 - 变调夹范围：`src/lib/guitar/chords.ts` 的 `CAPO_RANGE`（默认 7 品）
 - 分解指型：`src/lib/guitar/arpeggio.ts` 的 `ARPEGGIO_PATTERNS`
 - 音色：`src/lib/guitar/audio-engine.ts` 的 T60、`STRING_PAN`/`STRING_DETUNE_CENTS`、EQ 与混响参数

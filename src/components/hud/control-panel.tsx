@@ -235,7 +235,7 @@ export function ControlPanel({
             <span className="flex items-center gap-1.5">
               <Kbd>1</Kbd>
               <Kbd>7</Kbd>
-              切换和弦
+              切换音级
             </span>
             <span className="flex items-center gap-1.5">
               <Kbd>Space</Kbd>

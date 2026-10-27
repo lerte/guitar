@@ -1,28 +1,41 @@
-import { GESTURE_GUIDE, type ChordId } from "@/lib/guitar/chords";
+import { GESTURE_SLOTS, type ChordId, type ScaleDegree } from "@/lib/guitar/chords";
 import type { PlayMode } from "@/lib/hands/gesture-controller";
 import { cn } from "@/lib/utils";
 
 type Props = {
   activeChord: ChordId | null;
+  /** The seven diatonic chords of the current key, in scale-degree order. */
+  chords: ChordId[];
+  degrees: ScaleDegree[];
+  keyName: string;
   playMode?: PlayMode;
   className?: string;
 };
 
-export function GestureGuide({ activeChord, playMode = "strum", className }: Props) {
+export function GestureGuide({
+  activeChord,
+  chords,
+  degrees,
+  keyName,
+  playMode = "strum",
+  className,
+}: Props) {
   return (
     <div className={cn("hud-panel pointer-events-auto rounded-2xl p-3", className)}>
       <div className="mb-2 flex items-baseline justify-between gap-3 px-0.5">
         <span className="hud-eyebrow">左手 · 手型对照</span>
-        <span className="text-[10px] text-white/35">比出手型并保持 0.1 秒</span>
+        <span className="text-[10px] text-white/35">{keyName} · 手指数量 = 音级</span>
       </div>
 
       <div className="grid grid-cols-4 gap-1.5 xl:grid-cols-8">
-        {GESTURE_GUIDE.map((entry) => {
-          const active = entry.chord === activeChord;
+        {GESTURE_SLOTS.map((slot) => {
+          const degree = slot.degree === null ? null : degrees[slot.degree];
+          const chord = slot.degree === null ? null : chords[slot.degree];
+          const active = chord !== null && chord === activeChord;
           return (
             <div
-              key={entry.pattern}
-              title={`${entry.hint} → ${entry.chord ?? "切音"}`}
+              key={slot.pattern}
+              title={`${slot.hint} → ${degree ? `${degree.roman} ${chord}` : "切音"}`}
               className={cn(
                 "flex flex-col items-center gap-0.5 rounded-xl border px-1 py-1.5 transition-all duration-200",
                 active
@@ -30,16 +43,18 @@ export function GestureGuide({ activeChord, playMode = "strum", className }: Pro
                   : "border-white/[0.07] bg-white/[0.02]",
               )}
             >
-              <span className="text-[15px] leading-none">{entry.emoji}</span>
+              <span className="text-[15px] leading-none">{slot.emoji}</span>
               <span
                 className={cn(
-                  "text-[11px] font-semibold leading-none",
+                  "max-w-full truncate text-[10px] font-semibold leading-none",
                   active ? "text-primary" : "text-white/75",
                 )}
               >
-                {entry.chord ?? "切音"}
+                {chord ?? "切音"}
               </span>
-              <span className="text-[9px] leading-none text-white/30">{entry.label}</span>
+              <span className="text-[9px] leading-none text-white/30">
+                {degree ? degree.roman : slot.label}
+              </span>
             </div>
           );
         })}

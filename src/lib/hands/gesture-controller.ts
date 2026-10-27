@@ -1,4 +1,4 @@
-import { resolveChord, type ChordId } from "@/lib/guitar/chords";
+import { keyChords, resolveDegree, type ChordId } from "@/lib/guitar/chords";
 import type { StrumDirection } from "@/lib/guitar/audio-engine";
 import { DEFAULT_FEEL, normalizeFeel, type FeelTuning } from "./feel";
 import { clamp, type HandAnalysis, type Landmark } from "./landmarks";
@@ -30,7 +30,7 @@ export type PluckEvent = {
 };
 
 export type GestureState = {
-  /** Debounced chord currently selected by the left hand; null = muted. */
+  /** Chord currently selected by the left hand; null = muted. */
   chord: ChordId | null;
   /** Raw extended-finger count (instant feedback, no debounce). */
   fingers: number;
@@ -84,9 +84,16 @@ const PLUCK_MIN_INTERVAL_MS = 45;
 export class GestureController {
   private options: Options;
 
-  private chord: ChordId | null = "C";
-  private lastSoundingChord: ChordId = "C";
-  private pendingChord: ChordId | null = "C";
+  /**
+   * The seven chords of the current key + mode. The left hand selects a
+   * *degree*; the chord label behind it is read from this list, so changing key
+   * while holding a shape re-voices the chord instead of dropping it.
+   */
+  private chords: ChordId[] = keyChords(0, "ionian");
+  private degree: number | null = 0;
+  private lastDegree = 0;
+  private pendingDegree: number | null = 0;
+  private emittedChord: ChordId | null = this.chords[0];
   private pendingSince = 0;
   private fingers = 0;
   private pattern = "01000";
@@ -127,9 +134,14 @@ export class GestureController {
     this.options = options;
   }
 
+  /** The chord behind the current degree, in the current key. */
+  private get chordId(): ChordId | null {
+    return this.degree === null ? null : (this.chords[this.degree] ?? null);
+  }
+
   get state(): GestureState {
     return {
-      chord: this.chord,
+      chord: this.chordId,
       fingers: this.fingers,
       pattern: this.pattern,
       left: this.leftHand,
@@ -143,6 +155,20 @@ export class GestureController {
       engaging: this.engaging,
       lastPluck: this.lastPluck,
     };
+  }
+
+  /**
+   * Swap in the chord set of a new key / mode. The held degree survives, so a
+   * key change mid-hold transposes the chord instead of silencing it — and the
+   * HUD is told about the new chord even when no hand moved.
+   */
+  setChords(chords: ChordId[]) {
+    if (this.chords === chords) return;
+    this.chords = chords;
+    const next = this.chordId;
+    if (next === this.emittedChord) return;
+    this.emittedChord = next;
+    this.options.onChord(next, { fingers: this.fingers, pattern: this.pattern });
   }
 
   /** Live tuning from the settings panel; a cheap no-op when nothing changed. */
@@ -223,44 +249,48 @@ export class GestureController {
   }
 
   private updateChord(hand: TrackedHand, now: number) {
-    const next = resolveChord(hand.analysis.fingers);
+    const next = resolveDegree(hand.analysis.fingers);
     this.fingers = hand.analysis.extendedCount;
     this.pattern = hand.analysis.pattern;
 
-    if (next === this.chord) {
-      this.pendingChord = next;
+    if (next === this.degree) {
+      this.pendingDegree = next;
       this.pendingSince = 0;
       return;
     }
 
-    if (next !== this.pendingChord) {
-      this.pendingChord = next;
+    if (next !== this.pendingDegree) {
+      this.pendingDegree = next;
       this.pendingSince = now;
       return;
     }
 
     const hold = next === null ? this.muteHoldMs : this.feel.chordHoldMs;
     if (this.pendingSince && now - this.pendingSince >= hold) {
-      this.applyChord(next, now);
+      this.applyDegree(next, now);
       this.pendingSince = 0;
     }
   }
 
-  private applyChord(next: ChordId | null, now: number) {
-    const changed = next !== this.chord;
-    this.chord = next;
-    if (next) this.lastSoundingChord = next;
+  private applyDegree(next: number | null, now: number) {
+    const changed = next !== this.degree;
+    this.degree = next;
+    if (next !== null) this.lastDegree = next;
     if (!changed) return;
     this.chordChangedAt = now;
-    this.options.onChord(next, { fingers: this.fingers, pattern: this.pattern });
+    this.emittedChord = this.chordId;
+    this.options.onChord(this.emittedChord, {
+      fingers: this.fingers,
+      pattern: this.pattern,
+    });
   }
 
   /** Losing the chord hand releases a palm mute but keeps the last chord. */
   private handleChordHandLost(now: number) {
     if (!this.leftLostAt) this.leftLostAt = now;
     this.fingers = 0;
-    if (this.chord === null && now - this.leftLostAt > HAND_LOST_MS) {
-      this.applyChord(this.lastSoundingChord, now);
+    if (this.degree === null && now - this.leftLostAt > HAND_LOST_MS) {
+      this.applyDegree(this.lastDegree, now);
     }
   }
 
