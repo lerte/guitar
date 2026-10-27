@@ -17,37 +17,54 @@ import { GuitarEngine, type StrumDirection } from "@/lib/guitar/audio-engine";
 import type { PlayMode } from "@/lib/hands/gesture-controller";
 import {
   CAPO_RANGE,
+  EXTENSION_IDS,
   keyScale,
   MODE_IDS,
+  type ChordExtension,
   type ChordId,
   type ModeId,
 } from "@/lib/guitar/chords";
+import {
+  assignGesture,
+  EMPTY_GESTURE_MAP,
+  loadGestureMap,
+  saveGestureMap,
+  type GestureMap,
+} from "@/lib/guitar/gesture-map";
 import { DEFAULT_FEEL, loadFeel, saveFeel, type FeelTuning } from "@/lib/hands/feel";
 
 type Phase = "idle" | "starting" | "live" | "error";
 
+type KeyState = { root: number; mode: ModeId; extension: ChordExtension };
+
 const KEY_STORAGE = "air-guitar:key";
 
-/** 调式 survives reloads: it is the one setting that changes the whole set. */
-function loadKey(): { root: number; mode: ModeId } {
+/** 调式 + 和弦色彩 survives reloads: they define the whole chord set. */
+function loadKey(): KeyState {
   try {
     const raw = localStorage.getItem(KEY_STORAGE);
     if (raw) {
-      const [root, mode] = raw.split(":");
+      const [root, mode, extension] = raw.split(":");
       const pc = Number.parseInt(root ?? "", 10);
       if (!Number.isNaN(pc) && MODE_IDS.includes(mode as ModeId)) {
-        return { root: ((pc % 12) + 12) % 12, mode: mode as ModeId };
+        return {
+          root: ((pc % 12) + 12) % 12,
+          mode: mode as ModeId,
+          extension: EXTENSION_IDS.includes(extension as ChordExtension)
+            ? (extension as ChordExtension)
+            : "triad",
+        };
       }
     }
   } catch {
     /* storage can be blocked */
   }
-  return { root: 0, mode: "ionian" };
+  return { root: 0, mode: "ionian", extension: "triad" };
 }
 
-function saveKey(root: number, mode: ModeId) {
+function saveKey(root: number, mode: ModeId, extension: ChordExtension) {
   try {
-    localStorage.setItem(KEY_STORAGE, `${root}:${mode}`);
+    localStorage.setItem(KEY_STORAGE, `${root}:${mode}:${extension}`);
   } catch {
     /* ignore */
   }
@@ -81,9 +98,30 @@ function KeyboardBackdrop() {
 }
 
 export default function App() {
-  const [key, setKey] = useState<{ root: number; mode: ModeId }>(() => loadKey());
-  const scale = useMemo(() => keyScale(key.root, key.mode), [key.root, key.mode]);
+  const [key, setKey] = useState<KeyState>(() => loadKey());
+  const scale = useMemo(
+    () => keyScale(key.root, key.mode, key.extension),
+    [key.root, key.mode, key.extension],
+  );
   const chords = scale.chords;
+  const [gestures, setGestures] = useState<GestureMap>(() => loadGestureMap());
+
+  /**
+   * Chords the engine should keep warm: the key's seven plus every chord a
+   * gesture is pinned to, so the first strum after assigning one is not cold.
+   */
+  const chordSet = useMemo(() => {
+    const custom = Object.values(gestures).filter((value): value is ChordId => value !== null);
+    if (custom.length === 0) return chords;
+    return [...new Set([...chords, ...custom])];
+  }, [chords, gestures]);
+
+  /** Chords pinned by a gesture; a key change must never transpose them. */
+  const pinnedChords = useMemo(() => {
+    const pinned = new Set<ChordId>();
+    for (const value of Object.values(gestures)) if (value) pinned.add(value);
+    return pinned;
+  }, [gestures]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -100,7 +138,7 @@ export default function App() {
   const pickPulseIdRef = useRef(0);
   const capoRef = useRef(0);
 
-  chordsRef.current = chords;
+  chordsRef.current = chordSet;
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [stage, setStage] = useState("");
@@ -145,26 +183,32 @@ export default function App() {
   }, [feel]);
 
   useEffect(() => {
-    saveKey(key.root, key.mode);
-    engineRef.current?.setChordSet(chords);
-  }, [key.root, key.mode, chords]);
+    saveGestureMap(gestures);
+  }, [gestures]);
+
+  useEffect(() => {
+    saveKey(key.root, key.mode, key.extension);
+    engineRef.current?.setChordSet(chordSet);
+  }, [key.root, key.mode, key.extension, chordSet]);
 
   /**
    * Changing key keeps the *degree*: the shape held by the left hand (or the
    * chord chosen with 1–7) is transposed into the new key instead of being
    * dropped. `chords` has no duplicate labels within a key, so the index of the
-   * old label is exactly the degree.
+   * old label is exactly the degree. Chords pinned to a gesture are skipped —
+   * they are fixed, the controller keeps sounding them as they are.
    */
   const previousChordsRef = useRef(chords);
   useEffect(() => {
     const previous = previousChordsRef.current;
     previousChordsRef.current = chords;
     if (previous === chords) return;
+    if (pinnedChords.has(chordRef.current)) return;
     const degree = previous.indexOf(chordRef.current);
     if (degree < 0) return;
     chordRef.current = chords[degree];
     setChord(chords[degree]);
-  }, [chords]);
+  }, [chords, pinnedChords]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -374,6 +418,18 @@ export default function App() {
     handleStrum({ direction, velocity: 0.85 });
   }, [handleStrum]);
 
+  const assignGestureChord = useCallback(
+    (pattern: string, value: ChordId | null | undefined) => {
+      setGestures((current) => assignGesture(current, pattern, value));
+    },
+    [],
+  );
+
+  /** 手势映射的试听：只发声，不改变当前选中的和弦。 */
+  const previewChord = useCallback((next: ChordId) => {
+    engineRef.current?.playChord(next, 0.8);
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -454,6 +510,7 @@ export default function App() {
       setKey((current) => ({
         root: Number.isNaN(keyParam) ? current.root : ((keyParam % 12) + 12) % 12,
         mode: scaleParam && MODE_IDS.includes(scaleParam as ModeId) ? (scaleParam as ModeId) : current.mode,
+        extension: current.extension,
       }));
     }
     if (params.get("autostart") === "1") void startCamera();
@@ -469,6 +526,7 @@ export default function App() {
     mode: playMode,
     feel,
     chords,
+    gestures,
     onChord: handleChord,
     onStrum: handleStrum,
     onPluck: handlePluck,
@@ -583,6 +641,12 @@ export default function App() {
             arpBpm={arpBpm}
             arpPattern={arpPattern}
             feel={feel}
+            chords={chords}
+            degrees={scale.degrees}
+            gestures={gestures}
+            onAssignGesture={assignGestureChord}
+            onResetGestures={() => setGestures(EMPTY_GESTURE_MAP)}
+            onPreviewChord={previewChord}
             onFeelChange={setFeel}
             onResetFeel={() => setFeel(DEFAULT_FEEL)}
             onAutoArp={setAutoArp}
@@ -597,6 +661,7 @@ export default function App() {
                 chords={chords}
                 degrees={scale.degrees}
                 keyName={scale.label}
+                gestures={gestures}
                 playMode={playMode}
                 className="hidden max-w-[26rem] lg:block"
               />
@@ -606,7 +671,8 @@ export default function App() {
                 <KeyControl
                   tonicPc={key.root}
                   modeId={key.mode}
-                  onChange={(root, mode) => setKey({ root, mode })}
+                  extension={key.extension}
+                  onChange={(root, mode, extension) => setKey({ root, mode, extension })}
                 />
                 <CapoControl value={capo} onChange={setCapo} />
                 <PlayModeSwitch value={playMode} onChange={setPlayMode} />

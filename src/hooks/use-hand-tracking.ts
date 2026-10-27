@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { ChordId } from "@/lib/guitar/chords";
+import type { GestureMap } from "@/lib/guitar/gesture-map";
 import type { StrumDirection } from "@/lib/guitar/audio-engine";
 import { getHandTracker, onTrackerStage, type HandTracker, type RawHand } from "@/lib/hands/hand-tracker";
 import {
@@ -76,6 +77,8 @@ type Options = {
   feel: FeelTuning;
   /** The seven chords of the current key + mode, in scale-degree order. */
   chords: ChordId[];
+  /** User overrides: shape → fixed chord / 留空. */
+  gestures: GestureMap;
   onChord?: (chord: ChordId | null, info: { fingers: number; pattern: string }) => void;
   onStrum?: (event: { direction: StrumDirection; velocity: number }) => void;
   onPluck?: (event: PluckEvent) => void;
@@ -153,6 +156,7 @@ export function useHandTracking(options: Options) {
     mode: options.mode,
     feel: options.feel,
     chords: options.chords,
+    gestures: options.gestures,
   });
   optionsRef.current = {
     onChord,
@@ -163,6 +167,7 @@ export function useHandTracking(options: Options) {
     mode: options.mode,
     feel: options.feel,
     chords: options.chords,
+    gestures: options.gestures,
   };
 
   const retry = useCallback(() => {
@@ -214,6 +219,7 @@ export function useHandTracking(options: Options) {
       controller.setMode(settings.mode);
       controller.setTuning(settings.feel);
       controller.setChords(settings.chords);
+      controller.setGestureMap(settings.gestures);
 
       if (video.readyState >= 2 && video.videoWidth > 0 && video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;

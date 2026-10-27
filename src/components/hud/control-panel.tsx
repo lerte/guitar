@@ -1,6 +1,9 @@
 import { AudioLines, Keyboard, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GestureMapSection } from "@/components/hud/gesture-map-panel";
 import { ARPEGGIO_PATTERNS } from "@/lib/guitar/arpeggio";
+import type { ChordId, ScaleDegree } from "@/lib/guitar/chords";
+import type { GestureMap } from "@/lib/guitar/gesture-map";
 import { FEEL_RANGES, type FeelTuning } from "@/lib/hands/feel";
 import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
@@ -21,11 +24,18 @@ type Props = {
   arpBpm: number;
   arpPattern: number;
   feel: FeelTuning;
+  /** The seven diatonic chords of the current key, in scale-degree order. */
+  chords: ChordId[];
+  degrees: ScaleDegree[];
+  gestures: GestureMap;
   onAutoArp: (value: boolean) => void;
   onFeelChange: (feel: FeelTuning) => void;
   onResetFeel: () => void;
   onArpBpm: (value: number) => void;
   onArpPattern: (value: number) => void;
+  onAssignGesture: (pattern: string, value: ChordId | null | undefined) => void;
+  onResetGestures: () => void;
+  onPreviewChord: (chord: ChordId) => void;
   onVolume: (value: number) => void;
   onReverb: (value: number) => void;
   onSwapHands: (value: boolean) => void;
@@ -71,11 +81,17 @@ export function ControlPanel({
   arpBpm,
   arpPattern,
   feel,
+  chords,
+  degrees,
+  gestures,
   onAutoArp,
   onFeelChange,
   onResetFeel,
   onArpBpm,
   onArpPattern,
+  onAssignGesture,
+  onResetGestures,
+  onPreviewChord,
   onVolume,
   onReverb,
   onSwapHands,
@@ -180,6 +196,17 @@ export function ControlPanel({
             自动分解按当前和弦循环拨弦；手动分解在画面里用右手高度选弦、捏合拨弦。
           </p>
         </div>
+
+        <Separator />
+
+        <GestureMapSection
+          gestures={gestures}
+          chords={chords}
+          degrees={degrees}
+          onAssign={onAssignGesture}
+          onReset={onResetGestures}
+          onPreview={onPreviewChord}
+        />
 
         <Separator />
 

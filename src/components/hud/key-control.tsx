@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Music2 } from "lucide-react";
-import { MODES, keyScale, type ModeId } from "@/lib/guitar/chords";
+import {
+  CHORD_EXTENSIONS,
+  MODES,
+  keyScale,
+  type ChordExtension,
+  type ModeId,
+} from "@/lib/guitar/chords";
 import { cn } from "@/lib/utils";
 
 type Props = {
   tonicPc: number;
   modeId: ModeId;
-  onChange: (tonicPc: number, modeId: ModeId) => void;
+  extension: ChordExtension;
+  onChange: (tonicPc: number, modeId: ModeId, extension: ChordExtension) => void;
   className?: string;
 };
 
@@ -17,10 +24,12 @@ const ROOTS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
  * seven hand shapes; the shapes themselves never change, so the muscle memory
  * carries over to every key.
  */
-export function KeyControl({ tonicPc, modeId, onChange, className }: Props) {
+export function KeyControl({ tonicPc, modeId, extension, onChange, className }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const scale = keyScale(tonicPc, modeId);
+  const scale = keyScale(tonicPc, modeId, extension);
+  const extensionName =
+    CHORD_EXTENSIONS.find((entry) => entry.id === extension)?.name ?? "三和弦";
 
   useEffect(() => {
     if (!open) return;
@@ -52,6 +61,9 @@ export function KeyControl({ tonicPc, modeId, onChange, className }: Props) {
       >
         <Music2 className="size-3 text-primary/80" />
         <span className="font-medium">{scale.label}</span>
+        {extension !== "triad" && (
+          <span className="text-[9px] text-white/40">· {extensionName}</span>
+        )}
         <ChevronDown
           className={cn("size-3 text-white/35 transition-transform duration-200", open && "rotate-180")}
           strokeWidth={2.4}
@@ -79,7 +91,7 @@ export function KeyControl({ tonicPc, modeId, onChange, className }: Props) {
                   key={pc}
                   type="button"
                   data-root={pc}
-                  onClick={() => onChange(pc, modeId)}
+                  onClick={() => onChange(pc, modeId, extension)}
                   className={cn(
                     "rounded-lg border px-1 py-1.5 text-[11px] font-medium transition-colors",
                     active
@@ -102,7 +114,7 @@ export function KeyControl({ tonicPc, modeId, onChange, className }: Props) {
                   key={mode.id}
                   type="button"
                   data-mode={mode.id}
-                  onClick={() => onChange(tonicPc, mode.id)}
+                  onClick={() => onChange(tonicPc, mode.id, extension)}
                   className={cn(
                     "flex items-baseline justify-between gap-1 rounded-lg border px-2 py-1.5 text-[11px] transition-colors",
                     active
@@ -112,6 +124,30 @@ export function KeyControl({ tonicPc, modeId, onChange, className }: Props) {
                 >
                   <span className="font-medium">{mode.name}</span>
                   <span className="text-[8.5px] uppercase tracking-wide text-white/25">{mode.en}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mb-1 mt-3 text-[10px] text-white/35">和弦色彩</div>
+          <div className="grid grid-cols-3 gap-1">
+            {CHORD_EXTENSIONS.map((entry) => {
+              const active = entry.id === extension;
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  data-extension={entry.id}
+                  title={entry.hint}
+                  onClick={() => onChange(tonicPc, modeId, entry.id)}
+                  className={cn(
+                    "rounded-lg border px-1 py-1.5 text-[11px] font-medium transition-colors",
+                    active
+                      ? "border-primary/60 bg-primary/[0.14] text-primary"
+                      : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:text-white/85",
+                  )}
+                >
+                  {entry.name}
                 </button>
               );
             })}

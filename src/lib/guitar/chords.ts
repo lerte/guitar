@@ -27,7 +27,34 @@ export const CAPO_RANGE = 7;
  */
 export type ChordId = string;
 
-export type ChordQuality = "major" | "minor" | "diminished";
+export type ChordQuality =
+  | "major"
+  | "minor"
+  | "diminished"
+  | "major7"
+  | "minor7"
+  | "dominant7"
+  | "halfDiminished7"
+  | "diminished7"
+  | "major9"
+  | "minor9"
+  | "dominant9"
+  | "halfDiminished9";
+
+/** How much color the seven diatonic chords of a key carry. */
+export type ChordExtension = "triad" | "seventh" | "ninth";
+
+export const CHORD_EXTENSIONS: readonly {
+  id: ChordExtension;
+  name: string;
+  hint: string;
+}[] = [
+  { id: "triad", name: "三和弦", hint: "根音 · 三音 · 五音" },
+  { id: "seventh", name: "七和弦", hint: "在三和弦上加入七音" },
+  { id: "ninth", name: "九和弦", hint: "在七和弦上再加入九音" },
+];
+
+export const EXTENSION_IDS: readonly ChordExtension[] = CHORD_EXTENSIONS.map((entry) => entry.id);
 
 export type Chord = {
   id: ChordId;
@@ -46,7 +73,7 @@ export type Chord = {
   baseFret: number;
   /** MIDI note per played string, low -> high. */
   midis: number[];
-  /** The three chord tones, spelled from the root: F♯ · A♯ · C♯. */
+  /** The chord tones, spelled from the root: F♯ · A♯ · C♯. */
   notes: string[];
   /** Pitch classes of the chord tones, used for capo transposition. */
   tonePcs: number[];
@@ -216,7 +243,7 @@ export type ScaleDegree = {
   quality: ChordQuality;
   /** Chord label, e.g. "B♭dim". */
   chord: ChordId;
-  /** Roman numeral, e.g. "vii°". */
+  /** Roman numeral, e.g. "vii°" or "V7". */
   roman: string;
 };
 
@@ -235,13 +262,79 @@ export type KeyScale = {
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII"];
 
+type SeventhQuality = "major7" | "minor7" | "dominant7" | "halfDiminished7";
+
+const NINTH_OF_SEVENTH: Record<SeventhQuality, ChordQuality> = {
+  major7: "major9",
+  minor7: "minor9",
+  dominant7: "dominant9",
+  halfDiminished7: "halfDiminished9",
+};
+
+/** Semitones from a scale degree up to the diatonic seventh above it. */
+function seventhInterval(mode: Mode, index: number) {
+  const root = mode.intervals[index];
+  const wrap = index + 6 >= 7 ? 12 : 0;
+  return mode.intervals[(index + 6) % 7] + wrap - root;
+}
+
+/**
+ * Turn a diatonic triad into the seventh/ninth chord the scale itself implies:
+ * V becomes a dominant seventh, ii a minor seventh, vii half-diminished, and so
+ * on. The church modes never produce mMaj7 or fully diminished sevenths, so the
+ * minor and diminished branches are fixed.
+ */
+function extendedQuality(
+  triad: ChordQuality,
+  seventh: number,
+  extension: ChordExtension,
+): ChordQuality {
+  if (extension === "triad") return triad;
+  const seventhQuality: SeventhQuality =
+    triad === "major"
+      ? seventh === 11
+        ? "major7"
+        : "dominant7"
+      : triad === "minor"
+        ? "minor7"
+        : "halfDiminished7";
+  return extension === "seventh" ? seventhQuality : NINTH_OF_SEVENTH[seventhQuality];
+}
+
+function romanNumeral(quality: ChordQuality, index: number) {
+  const base = ROMAN[index];
+  const lower = base.toLowerCase();
+  switch (quality) {
+    case "major":
+    case "major7":
+    case "major9":
+    case "dominant7":
+    case "dominant9":
+      return base;
+    case "minor":
+    case "minor7":
+    case "minor9":
+      return lower;
+    case "diminished":
+    case "diminished7":
+      return `${lower}°`;
+    case "halfDiminished7":
+    case "halfDiminished9":
+      return `${lower}ø`;
+  }
+}
+
 const keyCache = new Map<string, KeyScale>();
 
-/** Key scale + the seven diatonic chords, memoised per (tonic, mode). */
-export function keyScale(tonicPc: number, modeId: ModeId): KeyScale {
+/** Key scale + the seven diatonic chords, memoised per (tonic, mode, extension). */
+export function keyScale(
+  tonicPc: number,
+  modeId: ModeId,
+  extension: ChordExtension = "triad",
+): KeyScale {
   const pc = ((tonicPc % 12) + 12) % 12;
   const mode = modeById(modeId);
-  const cacheKey = `${pc}:${mode.id}`;
+  const cacheKey = `${pc}:${mode.id}:${extension}`;
   const cached = keyCache.get(cacheKey);
   if (cached) return cached;
 
@@ -249,16 +342,14 @@ export function keyScale(tonicPc: number, modeId: ModeId): KeyScale {
   const degrees: ScaleDegree[] = mode.intervals.map((interval, index) => {
     const degreePc = (pc + interval) % 12;
     const name = spellPitch(degreePc, (letter + index) % 7);
-    const quality = mode.qualities[index];
-    const base = ROMAN[index];
-    const roman =
-      quality === "major" ? base : quality === "minor" ? base.toLowerCase() : `${base.toLowerCase()}°`;
+    const quality = extendedQuality(mode.qualities[index], seventhInterval(mode, index), extension);
+    const numeral = extension === "seventh" ? "7" : extension === "ninth" ? "9" : "";
     return {
       pc: degreePc,
       name,
       quality,
       chord: `${name}${QUALITY_SUFFIX[quality]}`,
-      roman,
+      roman: `${romanNumeral(quality, index)}${numeral}`,
     };
   });
 
@@ -276,12 +367,16 @@ export function keyScale(tonicPc: number, modeId: ModeId): KeyScale {
 }
 
 /** The seven diatonic chord labels of a key + mode. */
-export function keyChords(tonicPc: number, modeId: ModeId): ChordId[] {
-  return keyScale(tonicPc, modeId).chords;
+export function keyChords(
+  tonicPc: number,
+  modeId: ModeId,
+  extension: ChordExtension = "triad",
+): ChordId[] {
+  return keyScale(tonicPc, modeId, extension).chords;
 }
 
-export function keyLabel(tonicPc: number, modeId: ModeId) {
-  return keyScale(tonicPc, modeId).label;
+export function keyLabel(tonicPc: number, modeId: ModeId, extension: ChordExtension = "triad") {
+  return keyScale(tonicPc, modeId, extension).label;
 }
 
 /* ------------------------------------------------------------------ */
@@ -292,22 +387,68 @@ const QUALITY_INTERVALS: Record<ChordQuality, readonly number[]> = {
   major: [0, 4, 7],
   minor: [0, 3, 7],
   diminished: [0, 3, 6],
+  major7: [0, 4, 7, 11],
+  minor7: [0, 3, 7, 10],
+  dominant7: [0, 4, 7, 10],
+  halfDiminished7: [0, 3, 6, 10],
+  diminished7: [0, 3, 6, 9],
+  major9: [0, 4, 7, 11, 14],
+  minor9: [0, 3, 7, 10, 14],
+  dominant9: [0, 4, 7, 10, 14],
+  halfDiminished9: [0, 3, 6, 10, 14],
 };
 
 const QUALITY_SUFFIX: Record<ChordQuality, string> = {
   major: "",
   minor: "m",
   diminished: "dim",
+  major7: "maj7",
+  minor7: "m7",
+  dominant7: "7",
+  halfDiminished7: "m7♭5",
+  diminished7: "dim7",
+  major9: "maj9",
+  minor9: "m9",
+  dominant9: "9",
+  halfDiminished9: "m9♭5",
 };
+
+/** Label for a bare root + quality pair, spelled with the flat note names guitarists read. */
+export function chordLabel(pc: number, quality: ChordQuality) {
+  return `${pitchName(pc)}${QUALITY_SUFFIX[quality]}`;
+}
 
 const QUALITY_LABEL: Record<ChordQuality, string> = {
   major: "大三和弦",
   minor: "小三和弦",
   diminished: "减三和弦",
+  major7: "大七和弦",
+  minor7: "小七和弦",
+  dominant7: "属七和弦",
+  halfDiminished7: "半减七和弦",
+  diminished7: "减七和弦",
+  major9: "大九和弦",
+  minor9: "小九和弦",
+  dominant9: "属九和弦",
+  halfDiminished9: "半减九和弦",
 };
 
-/** Intervals from the root to the chord tones, in degrees: root, third, fifth. */
-const TONE_LETTERS = [0, 2, 4];
+/**
+ * Scale-step offset (0 = root letter) for each chord interval: third, fifth,
+ * seventh and ninth each get their own letter, so B♭7 spells D♭ F A♭.
+ */
+const TONE_STEPS: Record<number, number> = {
+  0: 0,
+  3: 2,
+  4: 2,
+  6: 4,
+  7: 4,
+  8: 4,
+  9: 6,
+  10: 6,
+  11: 6,
+  14: 8,
+};
 
 type ShapeTemplate = {
   /** Fret offsets from the root fret; -1 mutes the string. */
@@ -347,6 +488,102 @@ const OPEN_SHAPES: Record<string, number[]> = {
   "9:minor": [-1, 0, 2, 2, 1, 0], // Am
 };
 
+/**
+ * Qualities without a hand-written CAGED shape. Their extra tones (seventh,
+ * ninth) make fixed shapes cramped, so a small search picks a compact voicing
+ * with the root in the bass instead.
+ */
+const SEARCHED_QUALITIES = new Set<ChordQuality>([
+  "major7",
+  "minor7",
+  "dominant7",
+  "halfDiminished7",
+  "diminished7",
+  "major9",
+  "minor9",
+  "dominant9",
+  "halfDiminished9",
+]);
+
+const SEARCH_MAX_FRET = 12;
+/** Shapes wider than this are awkward to hold and get penalised. */
+const SEARCH_MAX_SPAN = 5;
+
+type VoicingOption = { fret: number; tone: number };
+
+/** Per string, every fret (0…12) that sounds a chord tone, plus muted (-1). */
+function voicingOptions(pc: number, quality: ChordQuality): VoicingOption[][] {
+  const tonePcs = QUALITY_INTERVALS[quality].map((interval) => (pc + interval) % 12);
+  return TUNING_MIDI.map((openMidi) => {
+    const openPc = openMidi % 12;
+    const options: VoicingOption[] = [{ fret: -1, tone: -1 }];
+    for (let fret = 0; fret <= SEARCH_MAX_FRET; fret++) {
+      const tone = tonePcs.indexOf((openPc + fret) % 12);
+      if (tone >= 0) options.push({ fret, tone });
+    }
+    return options;
+  });
+}
+
+/**
+ * Exhaustive six-string search for a compact voicing that sounds every chord
+ * tone, prefers the root in the bass, and keeps the frets under the hand.
+ * At most ~6⁶ combinations per chord, so it runs fine on the first strum.
+ */
+function searchVoicing(pc: number, quality: ChordQuality): number[] {
+  const options = voicingOptions(pc, quality);
+  const frets: number[] = new Array(6).fill(-1);
+  let best: number[] = frets.slice();
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  const visit = (
+    string: number,
+    mask: number,
+    bassTone: number,
+    lowest: number,
+    highest: number,
+    muted: number,
+    open: number,
+  ) => {
+    if (string === 6) {
+      if (bassTone < 0) return;
+      let coverage = 0;
+      for (let bits = mask; bits; bits >>= 1) coverage += bits & 1;
+      const span = highest - lowest;
+      const score =
+        coverage * 12 +
+        (bassTone === 0 ? 8 : 0) -
+        highest * 0.5 -
+        span * 0.8 -
+        Math.max(0, span - SEARCH_MAX_SPAN) * 20 -
+        muted * 1.2 +
+        open * 0.3;
+      if (score > bestScore) {
+        bestScore = score;
+        best = frets.slice();
+      }
+      return;
+    }
+
+    for (const option of options[string]) {
+      const isMuted = option.fret < 0;
+      frets[string] = option.fret;
+      visit(
+        string + 1,
+        isMuted ? mask : mask | (1 << option.tone),
+        bassTone < 0 && !isMuted ? option.tone : bassTone,
+        isMuted ? lowest : lowest < 0 ? option.fret : Math.min(lowest, option.fret),
+        isMuted ? highest : Math.max(highest, option.fret),
+        muted + (isMuted ? 1 : 0),
+        open + (option.fret === 0 ? 1 : 0),
+      );
+    }
+  };
+
+  visit(0, 0, -1, -1, -1, 0, 0);
+  return best;
+}
+
 /** Lower is easier: low frets win, open strings help, muted strings hurt. */
 function shapeCost(frets: number[]) {
   let highest = 0;
@@ -366,6 +603,12 @@ function voicingFor(pc: number, quality: ChordQuality): number[] {
   const cacheKey = `${pc}:${quality}`;
   const cached = voicingCache.get(cacheKey);
   if (cached) return cached;
+
+  if (SEARCHED_QUALITIES.has(quality)) {
+    const searched = searchVoicing(pc, quality);
+    voicingCache.set(cacheKey, searched);
+    return searched;
+  }
 
   const candidates: number[][] = [];
   const open = OPEN_SHAPES[cacheKey];
@@ -409,7 +652,9 @@ function buildChord(id: ChordId, letter: number, pc: number, quality: ChordQuali
     .map((fret, string) => (fret < 0 ? null : TUNING_MIDI[string] + fret))
     .filter((midi): midi is number => midi !== null);
   const tonePcs = QUALITY_INTERVALS[quality].map((interval) => (pc + interval) % 12);
-  const notes = tonePcs.map((tonePc, index) => spellPitch(tonePc, (letter + TONE_LETTERS[index]) % 7));
+  const notes = QUALITY_INTERVALS[quality].map((interval, index) =>
+    spellPitch(tonePcs[index], (letter + (TONE_STEPS[interval] ?? index * 2)) % 7),
+  );
 
   return {
     id,
@@ -426,7 +671,22 @@ function buildChord(id: ChordId, letter: number, pc: number, quality: ChordQuali
   };
 }
 
-const CHORD_LABEL_RE = /^([A-G])([♯♭]{0,2})(dim|m)?$/;
+const CHORD_LABEL_RE = /^([A-G])([♯♭]{0,2})(.*)$/;
+
+const SUFFIX_QUALITY: Record<string, ChordQuality> = {
+  "": "major",
+  m: "minor",
+  dim: "diminished",
+  maj7: "major7",
+  m7: "minor7",
+  "7": "dominant7",
+  "m7♭5": "halfDiminished7",
+  dim7: "diminished7",
+  maj9: "major9",
+  m9: "minor9",
+  "9": "dominant9",
+  "m9♭5": "halfDiminished9",
+};
 
 function parseChordLabel(label: string) {
   const match = CHORD_LABEL_RE.exec(label.trim());
@@ -436,9 +696,15 @@ function parseChordLabel(label: string) {
   const accidental = ACCIDENTAL_VALUE[match[2] ?? ""];
   if (accidental === undefined) return null;
   const pc = (((LETTER_PCS[letter] + accidental) % 12) + 12) % 12;
-  const quality: ChordQuality =
-    match[3] === "dim" ? "diminished" : match[3] === "m" ? "minor" : "major";
+  const quality = SUFFIX_QUALITY[match[3] ?? ""];
+  if (!quality) return null;
   return { letter, pc, quality };
+}
+
+/** True when a label denotes the given root + quality, without building a voicing. */
+export function chordMatches(label: ChordId, pc: number, quality: ChordQuality) {
+  const parsed = parseChordLabel(label);
+  return Boolean(parsed) && parsed?.pc === pc && parsed?.quality === quality;
 }
 
 const chordCache = new Map<ChordId, Chord>();

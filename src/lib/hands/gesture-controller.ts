@@ -1,4 +1,11 @@
 import { keyChords, resolveDegree, type ChordId } from "@/lib/guitar/chords";
+import {
+  bindingFor,
+  EMPTY_GESTURE_MAP,
+  sameBinding,
+  type GestureBinding,
+  type GestureMap,
+} from "@/lib/guitar/gesture-map";
 import type { StrumDirection } from "@/lib/guitar/audio-engine";
 import { DEFAULT_FEEL, normalizeFeel, type FeelTuning } from "./feel";
 import { clamp, type HandAnalysis, type Landmark } from "./landmarks";
@@ -90,9 +97,15 @@ export class GestureController {
    * while holding a shape re-voices the chord instead of dropping it.
    */
   private chords: ChordId[] = keyChords(0, "ionian");
-  private degree: number | null = 0;
-  private lastDegree = 0;
-  private pendingDegree: number | null = 0;
+  /** Per-gesture overrides set by the user (empty = pure degree mapping). */
+  private gestures: GestureMap = EMPTY_GESTURE_MAP;
+  /** What the shape currently held by the left hand does. */
+  private binding: GestureBinding = { kind: "degree", degree: 0 };
+  /** Binding to fall back to when a 切音 is released by dropping the hand. */
+  private lastBinding: GestureBinding = { kind: "degree", degree: 0 };
+  private pendingBinding: GestureBinding = { kind: "degree", degree: 0 };
+  /** Degree the current pattern would select in this key (null = mute). */
+  private patternDegree: number | null = 0;
   private emittedChord: ChordId | null = this.chords[0];
   private pendingSince = 0;
   private fingers = 0;
@@ -134,14 +147,21 @@ export class GestureController {
     this.options = options;
   }
 
-  /** The chord behind the current degree, in the current key. */
-  private get chordId(): ChordId | null {
-    return this.degree === null ? null : (this.chords[this.degree] ?? null);
+  /** The chord behind a binding, or null for 切音 / 留空. */
+  private chordFor(binding: GestureBinding): ChordId | null {
+    switch (binding.kind) {
+      case "degree":
+        return this.chords[binding.degree] ?? null;
+      case "chord":
+        return binding.chord;
+      default:
+        return null;
+    }
   }
 
   get state(): GestureState {
     return {
-      chord: this.chordId,
+      chord: this.emittedChord,
       fingers: this.fingers,
       pattern: this.pattern,
       left: this.leftHand,
@@ -160,15 +180,28 @@ export class GestureController {
   /**
    * Swap in the chord set of a new key / mode. The held degree survives, so a
    * key change mid-hold transposes the chord instead of silencing it — and the
-   * HUD is told about the new chord even when no hand moved.
+   * HUD is told about the new chord even when no hand moved. Shapes pinned to a
+   * fixed chord (or left blank) are unaffected.
    */
   setChords(chords: ChordId[]) {
     if (this.chords === chords) return;
     this.chords = chords;
-    const next = this.chordId;
+    if (this.binding.kind !== "degree") return;
+    const next = this.chordFor(this.binding);
     if (next === this.emittedChord) return;
     this.emittedChord = next;
     this.options.onChord(next, { fingers: this.fingers, pattern: this.pattern });
+  }
+
+  /**
+   * Swap in the user's per-gesture assignments. When a hand is already up the
+   * new binding takes effect immediately instead of waiting for a re-hold.
+   */
+  setGestureMap(gestures: GestureMap) {
+    if (this.gestures === gestures) return;
+    this.gestures = gestures;
+    if (!this.leftHand) return;
+    this.applyBinding(bindingFor(gestures, this.pattern, this.patternDegree), this.lastUpdateAt);
   }
 
   /** Live tuning from the settings panel; a cheap no-op when nothing changed. */
@@ -249,48 +282,53 @@ export class GestureController {
   }
 
   private updateChord(hand: TrackedHand, now: number) {
-    const next = resolveDegree(hand.analysis.fingers);
+    const degree = resolveDegree(hand.analysis.fingers);
+    this.patternDegree = degree;
     this.fingers = hand.analysis.extendedCount;
     this.pattern = hand.analysis.pattern;
+    const next = bindingFor(this.gestures, hand.analysis.pattern, degree);
 
-    if (next === this.degree) {
-      this.pendingDegree = next;
+    if (sameBinding(next, this.binding)) {
+      this.pendingBinding = next;
       this.pendingSince = 0;
       return;
     }
 
-    if (next !== this.pendingDegree) {
-      this.pendingDegree = next;
+    if (!sameBinding(next, this.pendingBinding)) {
+      this.pendingBinding = next;
       this.pendingSince = now;
       return;
     }
 
-    const hold = next === null ? this.muteHoldMs : this.feel.chordHoldMs;
+    const hold =
+      next.kind === "mute" || next.kind === "none" ? this.muteHoldMs : this.feel.chordHoldMs;
     if (this.pendingSince && now - this.pendingSince >= hold) {
-      this.applyDegree(next, now);
+      this.applyBinding(next, now);
       this.pendingSince = 0;
     }
   }
 
-  private applyDegree(next: number | null, now: number) {
-    const changed = next !== this.degree;
-    this.degree = next;
-    if (next !== null) this.lastDegree = next;
-    if (!changed) return;
+  private applyBinding(next: GestureBinding, now: number) {
+    if (sameBinding(next, this.binding)) return;
+    this.binding = next;
+    this.pendingBinding = next;
+    this.pendingSince = 0;
+    // A 留空 shape does nothing at all: the previous chord keeps sounding. It is
+    // also not remembered as the chord to restore after a 切音.
+    if (next.kind === "none") return;
+    this.lastBinding = next;
     this.chordChangedAt = now;
-    this.emittedChord = this.chordId;
-    this.options.onChord(this.emittedChord, {
-      fingers: this.fingers,
-      pattern: this.pattern,
-    });
+    const chord = this.chordFor(next);
+    this.emittedChord = chord;
+    this.options.onChord(chord, { fingers: this.fingers, pattern: this.pattern });
   }
 
   /** Losing the chord hand releases a palm mute but keeps the last chord. */
   private handleChordHandLost(now: number) {
     if (!this.leftLostAt) this.leftLostAt = now;
     this.fingers = 0;
-    if (this.degree === null && now - this.leftLostAt > HAND_LOST_MS) {
-      this.applyDegree(this.lastDegree, now);
+    if (this.binding.kind === "mute" && now - this.leftLostAt > HAND_LOST_MS) {
+      this.applyBinding(this.lastBinding, now);
     }
   }
 
